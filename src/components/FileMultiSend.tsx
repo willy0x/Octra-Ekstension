@@ -95,6 +95,19 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
     
     try {
       const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      
+      if (lines.length === 0) {
+        toast({
+          title: "Error",
+          description: "File is empty or contains no valid lines",
+          variant: "destructive",
+        });
+        // Reset file input
+        const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+        return;
+      }
+      
       const processedRecipients: FileRecipient[] = [];
       
       for (const line of lines) {
@@ -150,6 +163,9 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
         description: "Failed to process file",
         variant: "destructive",
       });
+      // Reset file input on processing error
+      const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
     } finally {
       setIsProcessing(false);
     }
@@ -164,6 +180,9 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
         description: "Please upload a .txt or .csv file",
         variant: "destructive",
       });
+      // Reset file input
+      const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
       return;
     }
 
@@ -173,6 +192,9 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
         description: "Please enter a valid amount for all recipients",
         variant: "destructive",
       });
+      // Reset file input
+      const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
       return;
     }
 
@@ -180,6 +202,16 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
     reader.onload = (e) => {
       const content = e.target?.result as string;
       processFileContent(content);
+    };
+    reader.onerror = () => {
+      toast({
+        title: "Error",
+        description: "Failed to read file",
+        variant: "destructive",
+      });
+      // Reset file input on read error
+      const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
     };
     reader.readAsText(file);
   }, [amountMode, sameAmount]);
@@ -227,6 +259,19 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
         const fee = calculateFee(amount);
         return total + amount + fee;
       }, 0);
+  };
+
+  const clearAllRecipients = () => {
+    setRecipients([]);
+    setResults([]);
+    // Reset file input
+    const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+    
+    toast({
+      title: "Cleared",
+      description: "All recipients have been cleared",
+    });
   };
 
   const handleSendAll = async () => {
@@ -509,6 +554,14 @@ export function FileMultiSend({ wallet, balance, nonce, onBalanceUpdate, onNonce
                 Recipients Preview ({recipients.length} total)
               </Label>
               <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearAllRecipients}
+                  className="text-red-600 hover:text-red-800 border-red-200 hover:border-red-300"
+                >
+                  Clear All
+                </Button>
                 <Badge variant="outline" className="text-green-600">
                   {validRecipients.length} valid
                 </Badge>

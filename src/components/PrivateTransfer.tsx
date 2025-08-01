@@ -4,19 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
-import { EyeOff, AlertTriangle, Wallet as WalletIcon, CheckCircle, ExternalLink, Copy, Calculator, Loader2 } from 'lucide-react';
+import { Shield, AlertTriangle, Wallet as WalletIcon, CheckCircle, ExternalLink, Copy, Loader2 } from 'lucide-react';
 import { Wallet } from '../types/wallet';
-import { fetchBalance, createPrivateTransfer } from '../utils/api';
+import { fetchEncryptedBalance, createPrivateTransfer, getAddressInfo } from '../utils/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface PrivateTransferProps {
   wallet: Wallet | null;
   balance: number | null;
   nonce: number;
-  onBalanceUpdate: (balance: number) => void;
-  onNonceUpdate: (nonce: number) => void;
+  onBalanceUpdate: (newBalance: number) => void;
+  onNonceUpdate: (newNonce: number) => void;
   onTransactionSuccess: () => void;
 }
 
@@ -45,18 +43,36 @@ function validateRecipientInput(input: string): { isValid: boolean; error?: stri
   };
 }
 
-export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNonceUpdate, onTransactionSuccess }: PrivateTransferProps) {
+export function PrivateTransfer({ 
+  wallet, 
+  balance, 
+  nonce, 
+  onBalanceUpdate, 
+  onNonceUpdate, 
+  onTransactionSuccess 
+}: PrivateTransferProps) {
   const [recipientAddress, setRecipientAddress] = useState('');
   const [addressValidation, setAddressValidation] = useState<{ isValid: boolean; error?: string } | null>(null);
   const [amount, setAmount] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; hash?: string; error?: string } | null>(null);
+  const [isCheckingRecipient, setIsCheckingRecipient] = useState(false);
+  const [encryptedBalance, setEncryptedBalance] = useState<any>(null);
+  const [recipientInfo, setRecipientInfo] = useState<any>(null);
+  const [result, setResult] = useState<{ success: boolean; tx_hash?: string; ephemeral_key?: string; error?: string } | null>(null);
   const { toast } = useToast();
+
+  // Fetch encrypted balance when wallet changes
+  useEffect(() => {
+    if (wallet) {
+      fetchEncryptedBalance(wallet.address, wallet.privateKey).then(setEncryptedBalance);
+    }
+  }, [wallet]);
 
   // Validate recipient address when input changes
   useEffect(() => {
     if (!recipientAddress.trim()) {
       setAddressValidation(null);
+      setRecipientInfo(null);
       return;
     }
 
@@ -64,14 +80,40 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
     setAddressValidation(validation);
   }, [recipientAddress]);
 
+  // Check recipient info when address is valid
+  useEffect(() => {
+    const checkRecipient = async () => {
+      if (!addressValidation?.isValid || !recipientAddress.trim()) {
+        setRecipientInfo(null);
+        return;
+      }
+
+      const resolvedAddress = recipientAddress.trim();
+
+      // Check if trying to send to self first
+      if (resolvedAddress === wallet?.address) {
+        setRecipientInfo({ error: "Cannot send to yourself" });
+        return;
+      }
+
+      setIsCheckingRecipient(true);
+      try {
+        const info = await getAddressInfo(resolvedAddress);
+        setRecipientInfo(info);
+      } catch (error) {
+        setRecipientInfo({ error: "Failed to check recipient" });
+      } finally {
+        setIsCheckingRecipient(false);
+      }
+    };
+
+    const timeoutId = setTimeout(checkRecipient, 300);
+    return () => clearTimeout(timeoutId);
+  }, [addressValidation, recipientAddress, wallet?.address]);
+
   const validateAmount = (amountStr: string) => {
     const num = parseFloat(amountStr);
     return !isNaN(num) && num > 0;
-  };
-
-  const calculateFee = (amount: number) => {
-    // Fee calculation based on CLI logic: 0.001 for < 1000, 0.003 for >= 1000
-    return amount < 1000 ? 0.001 : 0.003;
   };
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -100,11 +142,12 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
       return;
     }
 
-    const validation = validateRecipientInput(recipientAddress);
-    if (!validation.isValid) {
+    const finalRecipientAddress = recipientAddress.trim();
+    
+    if (!addressValidation?.isValid) {
       toast({
         title: "Error",
-        description: validation.error || "Invalid recipient address",
+        description: addressValidation?.error || "Invalid recipient address",
         variant: "destructive",
       });
       return;
@@ -119,14 +162,29 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
       return;
     }
 
-    const amountNum = parseFloat(amount);
-    const fee = calculateFee(amountNum);
-    const totalCost = amountNum + fee;
-
-    if (balance !== null && totalCost > balance) {
+    if (!recipientInfo || recipientInfo.error) {
       toast({
         title: "Error",
-        description: `Insufficient balance. Need ${totalCost.toFixed(8)} OCT (${amountNum.toFixed(8)} + ${fee.toFixed(8)} fee)`,
+        description: recipientInfo?.error || "Invalid recipient",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!recipientInfo.has_public_key) {
+      toast({
+        title: "Error",
+        description: "Recipient has no public key. They need to make a transaction first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const amountNum = parseFloat(amount);
+    if (!encryptedBalance || amountNum > encryptedBalance.encrypted) {
+      toast({
+        title: "Error",
+        description: "Insufficient encrypted balance",
         variant: "destructive",
       });
       return;
@@ -136,48 +194,34 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
     setResult(null);
 
     try {
-      // Refresh nonce before sending like CLI does
-      const freshBalanceData = await fetchBalance(wallet.address);
-      const currentNonce = freshBalanceData.nonce;
-
-      const sendResult = await createPrivateTransfer(
+      const transferResult = await createPrivateTransfer(
         wallet.address,
-        recipientAddress.trim(),
+        finalRecipientAddress,
         amountNum,
         wallet.privateKey
       );
 
-      setResult(sendResult);
+      setResult(transferResult);
 
-      if (sendResult.success) {
+      if (transferResult.success) {
         toast({
           title: "Private Transfer Sent!",
-          description: "Private transaction has been submitted successfully",
+          description: "Private transfer has been submitted successfully",
         });
 
         // Reset form
         setRecipientAddress('');
         setAmount('');
+        setRecipientInfo(null);
 
-        // Update nonce
-        onNonceUpdate(currentNonce + 1);
-
-        // Update balance after successful transaction
-        setTimeout(async () => {
-          try {
-            const updatedBalance = await fetchBalance(wallet.address);
-            onBalanceUpdate(updatedBalance.balance);
-            onNonceUpdate(updatedBalance.nonce);
-          } catch (error) {
-            console.error('Failed to refresh balance after transaction:', error);
-          }
-        }, 2000);
+        // Refresh encrypted balance
+        fetchEncryptedBalance(wallet.address, wallet.privateKey).then(setEncryptedBalance);
 
         onTransactionSuccess();
       } else {
         toast({
-          title: "Private Transfer Failed",
-          description: sendResult.error || "Unknown error occurred",
+          title: "Transfer Failed",
+          description: transferResult.error || "Unknown error occurred",
           variant: "destructive",
         });
       }
@@ -185,7 +229,7 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
       console.error('Private transfer error:', error);
       toast({
         title: "Error",
-        description: "Failed to send private transaction",
+        description: "Failed to send private transfer",
         variant: "destructive",
       });
       setResult({
@@ -200,53 +244,62 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
   if (!wallet) {
     return (
       <Alert>
-        <div className="flex items-start space-x-3">
-          <WalletIcon className="h-4 w-4 mt-0.5 flex-shrink-0" />
-          <AlertDescription>
-            No wallet available. Please generate or import a wallet first.
-          </AlertDescription>
-        </div>
+        <WalletIcon className="h-4 w-4" />
+        <AlertDescription>
+          No wallet available. Please generate or import a wallet first.
+        </AlertDescription>
       </Alert>
     );
   }
 
-  const amountNum = parseFloat(amount) || 0;
-  const fee = calculateFee(amountNum);
-  const totalCost = amountNum + fee;
-  const currentBalance = balance || 0;
+  if (!encryptedBalance || encryptedBalance.encrypted <= 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Private Transfer
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <div className="flex items-start space-x-3">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <AlertDescription>
+                No encrypted balance available. You need to encrypt some balance first to make private transfers.
+              </AlertDescription>
+            </div>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <EyeOff className="h-5 w-5" />
+          <Shield className="h-5 w-5" />
           Private Transfer
-          <Badge variant="secondary" className="text-xs">Anonymous</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <Alert>
           <div className="flex items-start space-x-3">
-            <EyeOff className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <Shield className="h-4 w-4 mt-0.5 flex-shrink-0" />
             <AlertDescription>
-              Private transfers hide the amount and recipient from public view. Only you and the recipient can see the transaction details.
+              Private transfers use your encrypted balance and are completely anonymous. The recipient can claim the transfer in the next epoch.
             </AlertDescription>
           </div>
         </Alert>
 
-        {/* Wallet Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>From Address</Label>
-            <div className="p-3 bg-muted rounded-md font-mono text-sm break-all">
-              {wallet.address}
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Current Balance</Label>
-            <div className="p-3 bg-muted rounded-md font-mono text-sm">
-              {currentBalance.toFixed(8)} OCT
-            </div>
+        {/* Encrypted Balance Display */}
+        <div className="p-3 bg-muted rounded-md">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium">Available Private Balance</span>
+            <span className="font-mono text-lg font-bold text-yellow-600">
+              {encryptedBalance.encrypted.toFixed(8)} OCT
+            </span>
           </div>
         </div>
 
@@ -261,8 +314,16 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
             className="font-mono"
           />
           
+          {/* Recipient Status */}
+          {isCheckingRecipient && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking recipient...
+            </div>
+          )}
+          
           {/* Address Validation Status */}
-          {recipientAddress.trim() && addressValidation && (
+          {recipientAddress.trim() && addressValidation && !isCheckingRecipient && (
             <div className="space-y-2">
               {addressValidation.isValid ? (
                 <div className="flex items-center gap-2">
@@ -272,13 +333,30 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
               ) : (
                 <div className="text-sm text-red-600">{addressValidation.error}</div>
               )}
+              
+              {recipientInfo && !recipientInfo.error && (
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">
+                    Balance: {recipientInfo.balance || '0'} OCT
+                  </div>
+                  {!recipientInfo.has_public_key && (
+                    <div className="text-sm text-red-600">
+                      ⚠️ Recipient has no public key. They need to make a transaction first.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          )}
+          
+          {recipientInfo && !isCheckingRecipient && recipientInfo.error && (
+            <div className="text-sm text-red-600">{recipientInfo.error}</div>
           )}
         </div>
 
         {/* Amount */}
         <div className="space-y-2">
-          <Label htmlFor="amount">Amount ( OCT )</Label>
+          <Label htmlFor="amount">Amount (OCT)</Label>
           <Input
             id="amount"
             type="number"
@@ -287,60 +365,11 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
             onChange={(e) => setAmount(e.target.value)}
             step="0.1"
             min="0"
+            max={encryptedBalance.encrypted}
           />
-          {amount && !validateAmount(amount) && (
-            <p className="text-sm text-red-600">Invalid amount</p>
+          {amount && validateAmount(amount) && parseFloat(amount) > encryptedBalance.encrypted && (
+            <p className="text-sm text-red-600">Amount exceeds available encrypted balance</p>
           )}
-        </div>
-
-        {/* Fee Calculation */}
-        {amount && validateAmount(amount) && (
-          <div className="p-3 bg-muted rounded-md space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Calculator className="h-4 w-4" />
-              Fee Calculation
-            </div>
-            <div className="space-y-1 text-xs sm:text-sm">
-              <div className="flex justify-between items-center">
-                <span>Amount:</span>
-                <span className="font-mono">{amountNum.toFixed(8)} OCT</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Fee ({amountNum < 1000 ? '< 1000' : '≥ 1000'} OCT):</span>
-                <span className="font-mono">{fee.toFixed(8)} OCT</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between items-center font-medium">
-                <span>Total Cost:</span>
-                <span className="font-mono">{totalCost.toFixed(8)} OCT</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Remaining Balance:</span>
-                <span className={`font-mono ${currentBalance - totalCost >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {(currentBalance - totalCost).toFixed(8)} OCT
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground mt-2">
-                Fee structure: 0.001 OCT for amounts &lt; 1000, 0.003 OCT for amounts ≥ 1000
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Privacy Notice */}
-        <div className="p-3 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 rounded-md">
-          <div className="flex items-start space-x-2">
-            <EyeOff className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-            <div className="text-sm">
-              <p className="font-medium text-blue-800 dark:text-blue-200">Privacy Features</p>
-              <ul className="text-blue-700 dark:text-blue-300 text-xs mt-1 space-y-1">
-                <li>• Amount is encrypted and hidden from public view</li>
-                <li>• Only sender and recipient can decrypt the amount</li>
-                <li>• Transaction appears on blockchain but details are private</li>
-                <li>• Recipient will receive a private transfer notification</li>
-              </ul>
-            </div>
-          </div>
         </div>
 
         {/* Transaction Result */}
@@ -356,33 +385,56 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
                 <p className={`text-sm font-medium ${result.success ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200'}`}>
                   {result.success ? 'Private Transfer Sent Successfully!' : 'Private Transfer Failed'}
                 </p>
-                {result.success && result.hash && (
-                  <div className="mt-2">
-                    <p className="text-green-700 dark:text-green-300 text-sm">Transaction Hash:</p>
-                    <div className="flex flex-col sm:flex-row sm:items-center mt-1 space-y-1 sm:space-y-0 sm:space-x-2">
-                      <code className="text-xs bg-green-100 dark:bg-green-900/50 px-2 py-1 rounded font-mono break-all text-green-800 dark:text-green-200 flex-1">
-                        {result.hash}
-                      </code>
-                      <div className="flex space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(result.hash!, 'Transaction Hash')}
-                          className="h-6 w-6 p-0"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                        <a
-                          href={`https://octrascan.io/tx/${result.hash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center justify-center h-6 w-6 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
-                          title="View on OctraScan"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
+                {result.success && result.tx_hash && (
+                  <div className="mt-2 space-y-2">
+                    <div>
+                      <p className="text-green-700 dark:text-green-300 text-sm">Transaction Hash:</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center mt-1 space-y-1 sm:space-y-0 sm:space-x-2">
+                        <code className="text-xs bg-green-100 dark:bg-green-900/50 px-2 py-1 rounded font-mono break-all text-green-800 dark:text-green-200 flex-1">
+                          {result.tx_hash}
+                        </code>
+                        <div className="flex space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(result.tx_hash!, 'Transaction Hash')}
+                            className="h-6 w-6 p-0"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <a
+                            href={`https://octrascan.io/tx/${result.tx_hash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center h-6 w-6 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                            title="View on OctraScan"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
                       </div>
                     </div>
+                    {result.ephemeral_key && (
+                      <div>
+                        <p className="text-green-700 dark:text-green-300 text-sm">Ephemeral Key:</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center mt-1 space-y-1 sm:space-y-0 sm:space-x-2">
+                          <code className="text-xs bg-green-100 dark:bg-green-900/50 px-2 py-1 rounded font-mono break-all text-green-800 dark:text-green-200 flex-1">
+                            {result.ephemeral_key}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyToClipboard(result.ephemeral_key!, 'Ephemeral Key')}
+                            className="h-6 w-6 p-0"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-green-700 dark:text-green-300 text-sm">
+                      Recipient can claim in next epoch
+                    </p>
                   </div>
                 )}
                 {result.error && (
@@ -398,21 +450,25 @@ export function PrivateTransfer({ wallet, balance, nonce, onBalanceUpdate, onNon
           disabled={
             isSending || 
             !addressValidation?.isValid ||
+            isCheckingRecipient ||
             !validateAmount(amount) || 
-            totalCost > currentBalance
+            !recipientInfo ||
+            recipientInfo.error ||
+            !recipientInfo.has_public_key ||
+            parseFloat(amount) > encryptedBalance.encrypted
           }
           className="w-full"
           size="lg"
         >
           {isSending ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               Sending Private Transfer...
             </>
           ) : (
             <>
-              <EyeOff className="mr-2 h-4 w-4" />
-              Send Private Transfer - {amountNum.toFixed(8)} OCT
+              <Shield className="h-4 w-4 mr-2" />
+              Send Private Transfer
             </>
           )}
         </Button>

@@ -21,7 +21,8 @@ export async function generateWallet(): Promise<Wallet> {
     address: walletData.address,
     privateKey: walletData.privateKey,
     mnemonic: walletData.mnemonic,
-    publicKey: walletData.publicKey
+    publicKey: walletData.publicKey,
+    type: 'generated'
   };
 }
 
@@ -50,7 +51,8 @@ export async function importWalletFromPrivateKey(privateKey: string): Promise<Wa
     return {
       address,
       privateKey: bufferToBase64(keyBuffer),
-      publicKey: bufferToHex(publicKey)
+      publicKey: bufferToHex(publicKey),
+      type: 'imported-private-key'
     };
   } catch (error) {
     throw new Error('Failed to create wallet from private key');
@@ -74,7 +76,8 @@ export async function importWalletFromMnemonic(mnemonic: string): Promise<Wallet
     address: walletData.address,
     privateKey: walletData.privateKey,
     mnemonic: walletData.mnemonic,
-    publicKey: walletData.publicKey
+    publicKey: walletData.publicKey,
+    type: 'imported-mnemonic'
   };
 }
 

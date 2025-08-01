@@ -3,6 +3,7 @@ export interface Wallet {
   privateKey: string;
   mnemonic?: string;
   publicKey?: string;
+  type?: 'generated' | 'imported-mnemonic' | 'imported-private-key';
 }
 
 export interface WalletData {

@@ -257,7 +257,7 @@ function App() {
             address: newWallet.address,
             encryptedData: JSON.stringify(newWallet), // TODO: Proper encryption needed
             createdAt: Date.now(),
-            needsEncryption: true // Flag to indicate this needs proper encryption
+            needsEncryption: true // Flag to indicate this needs proper encryption during lock/unlock
           };
           
           const updatedEncryptedWallets = [...existingEncryptedWallets, newEncryptedWallet];

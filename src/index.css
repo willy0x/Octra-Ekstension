@@ -151,9 +151,18 @@
   }
 }
 
-/* Chrome Extension Popup Styles */
+/* Chrome Extension Popup Styles - FIXED VERSION */
 .popup-view {
   font-size: 14px;
+  height: 600px;
+  width: 400px;
+  overflow: hidden; /* Prevent any overflow that could cause sizing issues */
+}
+
+.popup-container {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .popup-view .octra-header {
@@ -243,11 +252,6 @@
   min-height: 100vh;
 }
 
-.popup-view {
-  height: 600px;
-  overflow-y: auto;
-}
-
 /* Documentation-style content styling */
 .docs-content {
   @apply max-w-none;
@@ -299,6 +303,7 @@
 .docs-card-description {
   @apply text-sm text-muted-foreground;
 }
+
 /* Input focus ring spacing fix */
 .relative input[type="password"],
 .relative input[type="text"],

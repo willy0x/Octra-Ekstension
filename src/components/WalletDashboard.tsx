@@ -40,6 +40,7 @@ import { GenerateWallet } from './GenerateWallet';
 import { RPCProviderManager } from './RPCProviderManager';
 import { ConnectedDAppsManager } from './ConnectedDAppsManager';
 import { Wallet } from '../types/wallet';
+import { WalletManager } from '../utils/walletManager';
 import { fetchBalance, getTransactionHistory, fetchEncryptedBalance } from '../utils/api';
 import { useToast } from '@/hooks/use-toast';
 
@@ -233,23 +234,37 @@ export function WalletDashboard({
     }
   };
 
-  const handleDisconnect = () => {
-    // Lock wallet by setting lock state
-    localStorage.setItem('isWalletLocked', 'true');
-    
-    // Trigger storage events for cross-tab synchronization
-    setTimeout(() => {
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'isWalletLocked',
-        oldValue: 'false',
-        newValue: 'true',
-        storageArea: localStorage
-      }));
-    }, 50);
-    
-    // Call the parent's disconnect handler to update UI state
-    onDisconnect();
-    setShowLockConfirm(false);
+  const handleDisconnect = async () => {
+    try {
+      // CRITICAL FIX: Properly lock wallets using WalletManager
+      console.log('🔒 WalletDashboard: Locking wallets properly...');
+      
+      // Use WalletManager to properly lock wallets (this will handle encryption)
+      await WalletManager.lockWallets();
+      
+      // Trigger storage events for cross-tab synchronization
+      setTimeout(() => {
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'isWalletLocked',
+          oldValue: 'false',
+          newValue: 'true',
+          storageArea: localStorage
+        }));
+      }, 50);
+      
+      // Call the parent's disconnect handler to update UI state
+      onDisconnect();
+      setShowLockConfirm(false);
+      
+      console.log('✅ WalletDashboard: Wallets locked successfully');
+    } catch (error) {
+      console.error('❌ WalletDashboard: Failed to lock wallets:', error);
+      toast({
+        title: "Lock Failed",
+        description: "Failed to lock wallets properly",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleRemoveWallet = () => {
@@ -455,9 +470,11 @@ export function WalletDashboard({
                                     <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
                                   )}
                                 </div>
-                                {w.mnemonic && (
+                                {w.type && (
                                   <div className="text-xs text-muted-foreground mt-1">
-                                    Generated wallet
+                                    {w.type === 'generated' && 'Generated wallet'}
+                                    {w.type === 'imported-mnemonic' && 'Imported wallet (mnemonic)'}
+                                    {w.type === 'imported-private-key' && 'Imported wallet (private key)'}
                                   </div>
                                 )}
                               </div>

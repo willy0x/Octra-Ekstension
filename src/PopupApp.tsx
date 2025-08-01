@@ -283,49 +283,90 @@ function PopupApp() {
     }
   }, [isPopupMode]);
 
-  // Enhanced unlock handler to properly restore wallet state
-  const handleUnlock = async (unlockedWallets: Wallet[]) => {
+  // Enhanced unlock handler to properly restore wallet state and handle pending DApp requests
+  const handleUnlock = (unlockedWallets: Wallet[]) => {
     console.log('🔓 PopupApp: Handling unlock with wallets:', unlockedWallets.length);
+    console.log('🔓 PopupApp: Current state before unlock - isLocked:', isLocked, 'wallets:', wallets.length, 'wallet:', wallet?.address);
     
-    // CRITICAL FIX: Ensure we preserve all wallets from the unlock process
+    // CRITICAL FIX: Use synchronous state updates to prevent race conditions
     if (unlockedWallets.length > 0) {
-      setWallets(unlockedWallets);
+      console.log('🔓 PopupApp: Setting isLocked to false...');
       setIsLocked(false);
       
-      // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
-      try {
-        const activeWalletId = await ExtensionStorageManager.get('activeWalletId');
-        let activeWallet = unlockedWallets[0]; // Default to first wallet
-        
-        if (activeWalletId) {
-          const foundWallet = unlockedWallets.find(w => w.address === activeWalletId);
-          if (foundWallet) {
-            activeWallet = foundWallet;
-            console.log('🎯 PopupApp: Restored active wallet:', activeWallet.address.slice(0, 8) + '...');
+      console.log('🔓 PopupApp: Setting wallets...', unlockedWallets.length);
+      setWallets(unlockedWallets);
+      
+      // Set the first wallet as active immediately
+      console.log('🔓 PopupApp: Setting active wallet...', unlockedWallets[0].address.slice(0, 8) + '...');
+      setWallet(unlockedWallets[0]);
+      
+      // Handle active wallet selection and pending requests asynchronously
+      setTimeout(async () => {
+        try {
+          // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
+          const activeWalletId = await ExtensionStorageManager.get('activeWalletId');
+          let activeWallet = unlockedWallets[0]; // Default to first wallet
+          
+          if (activeWalletId) {
+            const foundWallet = unlockedWallets.find(w => w.address === activeWalletId);
+            if (foundWallet) {
+              activeWallet = foundWallet;
+              console.log('🎯 PopupApp: Restored active wallet:', activeWallet.address.slice(0, 8) + '...');
+              setWallet(activeWallet); // Update if different from first wallet
+            } else {
+              console.log('🔄 PopupApp: Active wallet not found, using first wallet:', activeWallet.address.slice(0, 8) + '...');
+              await ExtensionStorageManager.set('activeWalletId', activeWallet.address);
+            }
           } else {
-            console.log('🔄 PopupApp: Active wallet not found, using first wallet:', activeWallet.address.slice(0, 8) + '...');
-            // Update stored activeWalletId to match the new active wallet
+            console.log('🆕 PopupApp: No active wallet stored, using first wallet:', activeWallet.address.slice(0, 8) + '...');
             await ExtensionStorageManager.set('activeWalletId', activeWallet.address);
           }
-        } else {
-          console.log('🆕 PopupApp: No active wallet stored, using first wallet:', activeWallet.address.slice(0, 8) + '...');
-          await ExtensionStorageManager.set('activeWalletId', activeWallet.address);
+          
+          // Check for pending DApp requests
+          console.log('🔗 PopupApp: Checking for pending DApp requests after unlock...');
+          
+          // Check for pending connection request
+          const pendingRequest = await ExtensionStorageManager.get('pendingConnectionRequest');
+          if (pendingRequest) {
+            try {
+              const connectionReq = typeof pendingRequest === 'string' 
+                ? JSON.parse(pendingRequest) 
+                : pendingRequest;
+              console.log('🔗 PopupApp: Found pending connection request, continuing flow for:', connectionReq.origin);
+              setConnectionRequest(connectionReq);
+            } catch (error) {
+              console.error('Failed to parse pending connection request after unlock:', error);
+              await ExtensionStorageManager.remove('pendingConnectionRequest');
+            }
+          }
+          
+          // Check for pending contract request
+          const pendingContractRequest = await ExtensionStorageManager.get('pendingContractRequest');
+          if (pendingContractRequest) {
+            try {
+              const contractReq = typeof pendingContractRequest === 'string' 
+                ? JSON.parse(pendingContractRequest) 
+                : pendingContractRequest;
+              console.log('🔗 PopupApp: Found pending contract request, continuing flow for:', contractReq.origin);
+              setContractRequest(contractReq);
+            } catch (error) {
+              console.error('Failed to parse pending contract request after unlock:', error);
+              await ExtensionStorageManager.remove('pendingContractRequest');
+            }
+          }
+          
+          console.log('✅ PopupApp: Unlock handling completed successfully');
+        } catch (error) {
+          console.error('❌ PopupApp: Error in async unlock handler:', error);
         }
-        
-        setWallet(activeWallet);
-      } catch (error) {
-        console.error('❌ PopupApp: Error setting active wallet:', error);
-        // Fallback to first wallet
-        setWallet(unlockedWallets[0]);
-      }
+      }, 0);
+      
     } else {
       console.warn('⚠️ PopupApp: No wallets returned from unlock process');
+      setIsLocked(false);
       setWallets([]);
       setWallet(null);
-      setIsLocked(false);
     }
-    
-    console.log('✅ PopupApp: Unlock handling completed successfully');
   };
 
   const addWallet = async (newWallet: Wallet) => {
@@ -466,20 +507,37 @@ function PopupApp() {
     );
   }
 
+  // FORGE INSTRUCTION FIX: Show unlock screen for DApp requests when wallet is locked
+  if (isLocked) {
+    console.log('🔒 PopupApp: Wallet is locked, showing unlock screen');
+    return (
+      <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
+        <div className="w-[400px] h-[600px] bg-background popup-view">
+          <div className="popup-container h-full overflow-y-auto">
+            <UnlockWallet onUnlock={handleUnlock} />
+          </div>
+          <Toaster />
+        </div>
+      </ThemeProvider>
+    );
+  }
+
   // Handle connection request - Show even if no wallets loaded yet
   if (connectionRequest) {
     console.log('🔗 PopupApp: Showing connection request screen');
     return (
       <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
-        <div className="w-[400px] h-[600px] bg-background">
-          <DAppConnection
-            connectionRequest={connectionRequest}
-            wallets={wallets}
-            selectedWallet={wallet}
-            onWalletSelect={setWallet}
-            onApprove={handleConnectionApprove}
-            onReject={handleConnectionReject}
-          />
+        <div className="w-[400px] h-[600px] bg-background popup-view">
+          <div className="popup-container h-full overflow-y-auto">
+            <DAppConnection
+              connectionRequest={connectionRequest}
+              wallets={wallets}
+              selectedWallet={wallet}
+              onWalletSelect={setWallet}
+              onApprove={handleConnectionApprove}
+              onReject={handleConnectionReject}
+            />
+          </div>
           <Toaster />
         </div>
       </ThemeProvider>
@@ -491,40 +549,66 @@ function PopupApp() {
     console.log('🔗 PopupApp: Showing contract request screen');
     return (
       <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
-        <div className="w-[400px] h-[600px] bg-background">
-          <DAppRequestHandler 
-            wallets={wallets}
-            contractRequest={contractRequest}
-            selectedWallet={wallet}
-            onWalletSelect={setWallet}
-            onApprove={handleContractApprove}
-            onReject={handleContractReject}
-          />
+        <div className="w-[400px] h-[600px] bg-background popup-view">
+          <div className="popup-container h-full overflow-y-auto">
+            <DAppRequestHandler 
+              wallets={wallets}
+              contractRequest={contractRequest}
+              selectedWallet={wallet}
+              onWalletSelect={setWallet}
+              onApprove={handleContractApprove}
+              onReject={handleContractReject}
+            />
+          </div>
           <Toaster />
         </div>
       </ThemeProvider>
     );
   }
 
-  if (isLocked) {
+  // Show welcome screen if no wallets
+  if (wallets.length === 0) {
+    console.log('📝 PopupApp: No wallets found, showing welcome screen');
     return (
       <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
-        <div className="w-[400px] h-[600px] bg-background">
-          <UnlockWallet onUnlock={handleUnlock} />
+        <div className="w-[400px] h-[600px] bg-background popup-view">
+          <div className="popup-container h-full overflow-y-auto">
+            <WelcomeScreen onWalletCreated={addWallet} />
+          </div>
           <Toaster />
         </div>
       </ThemeProvider>
     );
   }
 
+  // Show wallet dashboard
+  console.log('💰 PopupApp: Showing wallet dashboard for:', wallet?.address?.slice(0, 8) + '...');
+  console.log('💰 PopupApp: Wallet dashboard conditions - wallet exists:', !!wallet, 'wallets.length:', wallets.length, 'isLocked:', isLocked);
+  
+  // CRITICAL FIX: Ensure we have a valid wallet before rendering dashboard
+  if (!wallet) {
+    console.log('⚠️ PopupApp: No active wallet available, showing loading or welcome screen');
+    return (
+      <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
+        <div className="w-[400px] h-[600px] bg-background popup-view">
+          <div className="popup-container h-full overflow-y-auto flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-lg">Loading wallet...</div>
+              <div className="text-sm text-muted-foreground mt-2">Please wait</div>
+            </div>
+          </div>
+          <Toaster />
+        </div>
+      </ThemeProvider>
+    );
+  }
+  
   return (
     <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
-      <div className={`w-[400px] h-[600px] bg-background ${isPopupMode ? 'popup-container' : ''} pb-4`}>
-        {!wallet ? (
-          <WelcomeScreen onWalletCreated={addWallet} />
-        ) : (
-          <WalletDashboard 
-            wallet={wallet} 
+      <div className="w-[400px] h-[600px] bg-background popup-view">
+        <div className="popup-container h-full overflow-y-auto">
+          <WalletDashboard
+            wallet={wallet}
             wallets={wallets}
             onDisconnect={disconnectWallet}
             onSwitchWallet={switchWallet}
@@ -533,7 +617,7 @@ function PopupApp() {
             onExpandedView={openExpandedView}
             isPopupMode={isPopupMode}
           />
-        )}
+        </div>
         <Toaster />
       </div>
     </ThemeProvider>

@@ -630,10 +630,12 @@ export function TxHistory({ wallet, transactions, onTransactionsUpdate, isLoadin
           <TabsContent value="contracts" className="mt-4">
             {contractHistory.length === 0 ? (
               <Alert>
-                <Code className="h-4 w-4" />
-                <AlertDescription>
-                  No contract interactions found for this wallet.
-                </AlertDescription>
+                <div className="flex items-start space-x-3">
+                  <Code className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <AlertDescription>
+                    No contract interactions found for this wallet.
+                  </AlertDescription>
+                </div>
               </Alert>
             ) : (
               <div className="space-y-4">
