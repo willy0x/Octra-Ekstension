@@ -69,10 +69,21 @@ export function PasswordSetup({ wallet, onPasswordSet, onBack }: PasswordSetupPr
       const existingWallets = JSON.parse(localStorage.getItem('wallets') || '[]');
       console.log(`📦 PasswordSetup: Found ${existingWallets.length} existing wallets to encrypt`);
       
-      // Encrypt ALL wallets (including the current one and any existing ones)
-      const walletsToEncrypt = existingWallets.find((w: Wallet) => w.address === wallet.address) 
-        ? existingWallets 
-        : [...existingWallets, wallet];
+      // CRITICAL FIX: Encrypt ALL wallets (including the current one and any existing ones)
+      let walletsToEncrypt: Wallet[];
+      
+      // Check if current wallet already exists in the list
+      const walletExists = existingWallets.find((w: Wallet) => w.address === wallet.address);
+      
+      if (walletExists) {
+        // Current wallet already exists, encrypt all existing wallets
+        walletsToEncrypt = existingWallets;
+        console.log(`📦 PasswordSetup: Current wallet already exists, encrypting ${existingWallets.length} existing wallets`);
+      } else {
+        // Current wallet is new, add it to the list
+        walletsToEncrypt = [...existingWallets, wallet];
+        console.log(`📦 PasswordSetup: Adding current wallet to ${existingWallets.length} existing wallets`);
+      }
       
       console.log(`🔐 PasswordSetup: Will encrypt ${walletsToEncrypt.length} wallets total`);
       
@@ -92,6 +103,7 @@ export function PasswordSetup({ wallet, onPasswordSet, onBack }: PasswordSetupPr
           console.log(`🔐 PasswordSetup: Encrypted wallet ${walletToEncrypt.address.slice(0, 8)}...`);
         } catch (error) {
           console.error(`❌ PasswordSetup: Failed to encrypt wallet ${walletToEncrypt.address}:`, error);
+          // Don't throw here, continue with other wallets
         }
       }
       
@@ -102,9 +114,14 @@ export function PasswordSetup({ wallet, onPasswordSet, onBack }: PasswordSetupPr
       localStorage.setItem('walletPasswordSalt', salt);
       localStorage.setItem('isWalletLocked', 'false');
       
-      // Store ALL encrypted wallets (this replaces any existing encrypted wallets)
-      localStorage.setItem('encryptedWallets', JSON.stringify(encryptedWallets));
-      console.log(`📦 PasswordSetup: Stored ${encryptedWallets.length} encrypted wallets`);
+      // CRITICAL FIX: Store ALL encrypted wallets (this replaces any existing encrypted wallets)
+      if (encryptedWallets.length > 0) {
+        localStorage.setItem('encryptedWallets', JSON.stringify(encryptedWallets));
+        console.log(`📦 PasswordSetup: Stored ${encryptedWallets.length} encrypted wallets`);
+      } else {
+        console.error('❌ PasswordSetup: No wallets were successfully encrypted!');
+        throw new Error('Failed to encrypt any wallets');
+      }
       
       // Ensure all wallets are also available in unencrypted storage for immediate use
       localStorage.setItem('wallets', JSON.stringify(walletsToEncrypt));

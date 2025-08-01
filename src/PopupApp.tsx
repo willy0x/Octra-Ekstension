@@ -287,12 +287,12 @@ function PopupApp() {
   const handleUnlock = async (unlockedWallets: Wallet[]) => {
     console.log('🔓 PopupApp: Handling unlock with wallets:', unlockedWallets.length);
     
-    // Ensure we preserve all wallets from the unlock process
-    setWallets(unlockedWallets);
-    setIsLocked(false);
-    
-    // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
+    // CRITICAL FIX: Ensure we preserve all wallets from the unlock process
     if (unlockedWallets.length > 0) {
+      setWallets(unlockedWallets);
+      setIsLocked(false);
+      
+      // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
       try {
         const activeWalletId = await ExtensionStorageManager.get('activeWalletId');
         let activeWallet = unlockedWallets[0]; // Default to first wallet
@@ -320,7 +320,9 @@ function PopupApp() {
       }
     } else {
       console.warn('⚠️ PopupApp: No wallets returned from unlock process');
+      setWallets([]);
       setWallet(null);
+      setIsLocked(false);
     }
     
     console.log('✅ PopupApp: Unlock handling completed successfully');

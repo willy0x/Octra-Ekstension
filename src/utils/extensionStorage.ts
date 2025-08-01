@@ -58,11 +58,22 @@ export class ExtensionStorageManager {
     if (this.isExtension) {
       try {
         await chrome.storage.local.set({ [key]: value });
-        // Also update localStorage for compatibility
-        localStorage.setItem(key, value);
+        // CRITICAL FIX: Also update localStorage for immediate consistency
+        try {
+          localStorage.setItem(key, value);
+        } catch (localStorageError) {
+          console.warn('Failed to update localStorage:', localStorageError);
+          // Don't fail the entire operation if localStorage fails
+        }
       } catch (error) {
         console.error('Failed to set in chrome.storage:', error);
-        localStorage.setItem(key, value);
+        // Fallback to localStorage
+        try {
+          localStorage.setItem(key, value);
+        } catch (localStorageError) {
+          console.error('Failed to set in localStorage fallback:', localStorageError);
+          throw error; // Re-throw original error
+        }
       }
     } else {
       localStorage.setItem(key, value);
@@ -73,10 +84,22 @@ export class ExtensionStorageManager {
     if (this.isExtension) {
       try {
         await chrome.storage.local.remove(key);
-        localStorage.removeItem(key);
+        // CRITICAL FIX: Also remove from localStorage for consistency
+        try {
+          localStorage.removeItem(key);
+        } catch (localStorageError) {
+          console.warn('Failed to remove from localStorage:', localStorageError);
+          // Don't fail the entire operation if localStorage fails
+        }
       } catch (error) {
         console.error('Failed to remove from chrome.storage:', error);
-        localStorage.removeItem(key);
+        // Fallback to localStorage
+        try {
+          localStorage.removeItem(key);
+        } catch (localStorageError) {
+          console.error('Failed to remove from localStorage fallback:', localStorageError);
+          throw error; // Re-throw original error
+        }
       }
     } else {
       localStorage.removeItem(key);

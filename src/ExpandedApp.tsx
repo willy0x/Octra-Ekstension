@@ -89,12 +89,41 @@ function ExpandedApp() {
 
   // Simple unlock handler - NO async operations
   const handleUnlock = (unlockedWallets: Wallet[]) => {
-    setWallets(unlockedWallets);
-    setIsLocked(false);
+    console.log('🔓 ExpandedApp: Handling unlock with wallets:', unlockedWallets.length);
     
+    // CRITICAL FIX: Ensure we preserve all wallets from the unlock process
     if (unlockedWallets.length > 0) {
-      setWallet(unlockedWallets[0]);
+      setWallets(unlockedWallets);
+      setIsLocked(false);
+      
+      // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
+      const activeWalletId = localStorage.getItem('activeWalletId');
+      let activeWallet = unlockedWallets[0]; // Default to first wallet
+      
+      if (activeWalletId) {
+        const foundWallet = unlockedWallets.find(w => w.address === activeWalletId);
+        if (foundWallet) {
+          activeWallet = foundWallet;
+          console.log('🎯 ExpandedApp: Restored active wallet:', activeWallet.address.slice(0, 8) + '...');
+        } else {
+          console.log('🔄 ExpandedApp: Active wallet not found, using first wallet:', activeWallet.address.slice(0, 8) + '...');
+          // Update stored activeWalletId to match the new active wallet
+          localStorage.setItem('activeWalletId', activeWallet.address);
+        }
+      } else {
+        console.log('🆕 ExpandedApp: No active wallet stored, using first wallet:', activeWallet.address.slice(0, 8) + '...');
+        localStorage.setItem('activeWalletId', activeWallet.address);
+      }
+      
+      setWallet(activeWallet);
+    } else {
+      console.warn('⚠️ ExpandedApp: No wallets returned from unlock process');
+      setWallets([]);
+      setWallet(null);
+      setIsLocked(false);
     }
+    
+    console.log('✅ ExpandedApp: Unlock handling completed successfully');
   };
 
   const addWallet = async (newWallet: Wallet) => {

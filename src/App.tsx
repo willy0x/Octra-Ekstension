@@ -160,12 +160,12 @@ function App() {
   const handleUnlock = (unlockedWallets: Wallet[]) => {
     console.log('🔓 App: Handling unlock with', unlockedWallets.length, 'wallets');
     
-    // Ensure we preserve all wallets from the unlock process
-    setWallets(unlockedWallets);
-    setIsLocked(false);
-    
-    // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
+    // CRITICAL FIX: Ensure we preserve all wallets from the unlock process
     if (unlockedWallets.length > 0) {
+      setWallets(unlockedWallets);
+      setIsLocked(false);
+      
+      // Set active wallet - prioritize stored activeWalletId, fallback to first wallet
       const activeWalletId = localStorage.getItem('activeWalletId');
       let activeWallet = unlockedWallets[0]; // Default to first wallet
       
@@ -187,7 +187,9 @@ function App() {
       setWallet(activeWallet);
     } else {
       console.warn('⚠️ App: No wallets returned from unlock process');
+      setWallets([]);
       setWallet(null);
+      setIsLocked(false);
     }
     
     console.log('✅ App: Unlock handling completed successfully');

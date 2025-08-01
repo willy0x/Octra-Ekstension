@@ -78,15 +78,38 @@ export class WalletManager {
       console.log(`🎯 WalletManager: Total wallets after decryption: ${decryptedWallets.length}`);
 
       if (decryptedWallets.length === 0) {
-        console.warn('⚠️ WalletManager: No wallets found after unlock process');
-        // Don't throw error, just return empty array - let the app handle empty state
+        console.warn('⚠️ WalletManager: No wallets found after unlock process - checking fallback storage');
+        
+        // CRITICAL FIX: Check localStorage as fallback for wallets that might not be encrypted yet
+        try {
+          const fallbackWallets = localStorage.getItem('wallets');
+          if (fallbackWallets) {
+            const parsedFallback = JSON.parse(fallbackWallets);
+            if (Array.isArray(parsedFallback) && parsedFallback.length > 0) {
+              decryptedWallets.push(...parsedFallback);
+              console.log(`🔄 WalletManager: Recovered ${parsedFallback.length} wallets from fallback storage`);
+            }
+          }
+        } catch (error) {
+          console.error('❌ WalletManager: Failed to load fallback wallets:', error);
+        }
       }
 
-      // Update storage atomically - ensure all wallets are preserved
-      await Promise.all([
-        ExtensionStorageManager.set('wallets', JSON.stringify(decryptedWallets)),
-        ExtensionStorageManager.set('isWalletLocked', 'false')
-      ]);
+      // CRITICAL FIX: Update storage atomically - ensure all wallets are preserved
+      if (decryptedWallets.length > 0) {
+        await Promise.all([
+          ExtensionStorageManager.set('wallets', JSON.stringify(decryptedWallets)),
+          ExtensionStorageManager.set('isWalletLocked', 'false')
+        ]);
+        
+        // Also update localStorage for immediate consistency
+        localStorage.setItem('wallets', JSON.stringify(decryptedWallets));
+        localStorage.setItem('isWalletLocked', 'false');
+      } else {
+        // Only update lock status if no wallets found
+        await ExtensionStorageManager.set('isWalletLocked', 'false');
+        localStorage.setItem('isWalletLocked', 'false');
+      }
       
       console.log('💾 WalletManager: Wallet data saved to storage successfully');
       
@@ -103,11 +126,13 @@ export class WalletManager {
           } else {
             // If stored wallet doesn't exist anymore, use first wallet
             await ExtensionStorageManager.set('activeWalletId', decryptedWallets[0].address);
+            localStorage.setItem('activeWalletId', decryptedWallets[0].address);
             console.log(`🔄 WalletManager: Active wallet not found, switching to first wallet: ${decryptedWallets[0].address.slice(0, 8)}...`);
           }
         } else {
           // No activeWalletId set, use first wallet
           await ExtensionStorageManager.set('activeWalletId', decryptedWallets[0].address);
+          localStorage.setItem('activeWalletId', decryptedWallets[0].address);
           console.log(`🆕 WalletManager: No active wallet set, using first wallet: ${decryptedWallets[0].address.slice(0, 8)}...`);
         }
       }
@@ -122,11 +147,15 @@ export class WalletManager {
 
   static async lockWallets(): Promise<void> {
     try {
-      // Clear wallet data but preserve activeWalletId for unlock restoration
+      // CRITICAL FIX: Clear wallet data but preserve activeWalletId for unlock restoration
       await Promise.all([
         ExtensionStorageManager.remove('wallets'),
         ExtensionStorageManager.set('isWalletLocked', 'true')
       ]);
+      
+      // Also clear localStorage for consistency
+      localStorage.removeItem('wallets');
+      localStorage.setItem('isWalletLocked', 'true');
       
       console.log('🔒 WalletManager: Wallets locked successfully (activeWalletId preserved)');
     } catch (error) {
