@@ -78,17 +78,9 @@ async function handleConnectionRequest(data, sender) {
   const connections = Array.isArray(connectionsData) ? connectionsData : [];
   const existingConnection = connections.find(conn => conn.origin === origin);
   
-  if (existingConnection) {
-    // Return existing connection
-    return {
-      type: 'CONNECTION_RESPONSE',
-      success: true,
-      result: {
-        address: existingConnection.selectedAddress,
-        permissions: existingConnection.permissions
-      }
-    };
-  }
+  // FIXED: Always show connection approval to allow wallet selection
+  // Remove automatic return of existing connection
+  console.log('Connection request from:', origin, existingConnection ? '(existing connection found)' : '(new connection)');
   
   // Store connection request data for popup to access
   await setStorageData('pendingConnectionRequest', {
@@ -96,7 +88,8 @@ async function handleConnectionRequest(data, sender) {
     appName: appName || origin,
     appIcon: appIcon || null,
     permissions,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    existingConnection: existingConnection // Pass existing connection info to UI
   });
   
   // Try to open popup first
@@ -120,18 +113,22 @@ async function handleConnectionRequest(data, sender) {
         chrome.runtime.onMessage.removeListener(messageListener);
         
         if (msg.approved) {
-          // Store connection
+          // FIXED: Store/update connection with the user-selected address
           const newConnection = {
             origin,
-            selectedAddress: msg.address,
+            selectedAddress: msg.address, // Use the user-selected wallet address
             permissions,
             connectedAt: Date.now()
           };
           
           getStorageData('connectedDApps').then(connectionsData => {
             const connections = Array.isArray(connectionsData) ? connectionsData : [];
-            const updatedConnections = [...connections, newConnection];
+            // Remove existing connection for this origin first
+            const filteredConnections = connections.filter(conn => conn.origin !== origin);
+            // Add the new/updated connection with selected address
+            const updatedConnections = [...filteredConnections, newConnection];
             setStorageData('connectedDApps', updatedConnections);
+            console.log('Connection updated for', origin, 'with wallet:', msg.address);
           });
         }
         

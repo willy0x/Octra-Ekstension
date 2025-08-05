@@ -167,41 +167,26 @@ export function DAppConnection({
             <div className="space-y-3">
               <h3 className="font-medium">Select Account</h3>
 
-                <ScrollArea className="pr-2 pb-2 rounded-md border">
-                        <div
-                          style={{
-                            minHeight: '8vh',  // Minimum height for the content area
-                            maxHeight: '15vh',  // Maximum height for the content area before scrolling
-                          }}
-                          className="p-2 space-y-2" // Add your padding here
-                        >
-
-                  {wallets.map((wallet, index) => (
-                    <div
-                      key={wallet.address}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedWallet?.address === wallet.address
-                          ? "border-primary bg-primary/5"
-                          : "hover:bg-muted/50"
-                      }`}
-                      onClick={() => onWalletSelect(wallet)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">Account {index + 1}</div>
-                          <div className="text-sm text-muted-foreground font-mono">
-                            {truncateAddress(wallet.address)}
-                          </div>
-                        </div>
-                        {selectedWallet?.address === wallet.address && (
-                          <Check className="h-5 w-5 text-primary" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
+                <div className="space-y-2">
+                  <select
+                    className="w-full p-3 border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    value={selectedWallet?.address || ''}
+                    onChange={(e) => {
+                      const wallet = wallets.find(w => w.address === e.target.value);
+                      if (wallet) onWalletSelect(wallet);
+                    }}
+                  >
+                    <option value="" disabled>
+                      Select an account
+                    </option>
+                    {wallets.map((wallet, index) => (
+                      <option key={wallet.address} value={wallet.address}>
+                        Account {index + 1} - {truncateAddress(wallet.address)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </ScrollArea>
+
             </div>
 
             <Separator />

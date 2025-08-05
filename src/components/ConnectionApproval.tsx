@@ -9,12 +9,13 @@ interface ConnectionApprovalProps {
     appIcon: string;
     permissions: string[];
   };
-  wallet: Wallet;
+  wallets: Wallet[];  // Changed to support multiple wallets
   onApprove: (approved: boolean, selectedAddress?: string) => void;
 }
 
-export function ConnectionApproval({ request, wallet, onApprove }: ConnectionApprovalProps) {
-  const [selectedWallet, setSelectedWallet] = useState<Wallet>(wallet);
+export function ConnectionApproval({ request, wallets, onApprove }: ConnectionApprovalProps) {
+  // Initialize with first wallet or null if no wallets
+  const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(wallets.length > 0 ? wallets[0] : null);
 
   // Convert request to DAppConnectionRequest format
   const connectionRequest = {
@@ -35,7 +36,7 @@ export function ConnectionApproval({ request, wallet, onApprove }: ConnectionApp
   return (
     <DAppConnection
       connectionRequest={connectionRequest}
-      wallets={[wallet]}
+      wallets={wallets}  // Pass all available wallets
       selectedWallet={selectedWallet}
       onWalletSelect={setSelectedWallet}
       onApprove={handleApprove}

@@ -130,6 +130,12 @@ export function UnifiedContractHandler({
     });
     setParameterValues(initialValues);
   }, [request.method.params]);
+  // Ensure connected wallet is used when provided
+  useEffect(() => {
+    if (connectedWallet && selectedWallet?.address !== connectedWallet.address) {
+      onWalletSelect(connectedWallet);
+    }
+  }, [connectedWallet, selectedWallet, onWalletSelect]);
 
   // Fetch balance when wallet is selected
   useEffect(() => {
@@ -692,51 +698,18 @@ export function UnifiedContractHandler({
               </div>
             )}
 
-            {/* Wallet Selection */}
-            {!connectedWallet && (
-              <div className="space-y-3">
-                <h3 className="font-medium flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Select Wallet
-                </h3>
-                <ScrollArea className="h-40">
-                  <div className="space-y-2">
-                    {wallets.map((wallet, index) => (
-                      <div
-                        key={wallet.address}
-                        className={`p-3 rounded-md border cursor-pointer transition-colors ${
-                          selectedWallet?.address === wallet.address
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border hover:bg-muted'
-                        }`}
-                        onClick={() => onWalletSelect(wallet)}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-medium">Account {index + 1}</p>
-                            <p className="text-sm text-muted-foreground font-mono">
-                              {truncateAddress(wallet.address)}
-                            </p>
-                          </div>
-                          {selectedWallet?.address === wallet.address && (
-                            <Check className="h-4 w-4 text-primary" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
-            {/* Balance Display */}
+            {/* Wallet Info */}
             {selectedWallet && (
               <div className="space-y-3">
                 <h3 className="font-medium flex items-center gap-2">
-                  <Calculator className="h-4 w-4" />
-                  Wallet Balance
+                  <Shield className="h-4 w-4" />
+                  Wallet Info
                 </h3>
-                <div className="p-4 bg-muted rounded-md">
+                <div className="p-4 bg-muted rounded-md space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">From Address:</span>
+                    <span className="font-mono text-sm">{truncateAddress(selectedWallet.address)}</span>
+                  </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Current Balance:</span>
                     <span className="font-mono font-medium">

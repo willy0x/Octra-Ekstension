@@ -303,13 +303,13 @@ function App() {
   };
 
   // Show connection approval if there's a connection request
-  if (connectionRequest && wallet && !isLocked) {
+  if (connectionRequest && wallets.length > 0 && !isLocked) {
     return (
       <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
         <div className="min-h-screen bg-background">
           <ConnectionApproval 
             request={connectionRequest}
-            wallet={wallet}
+            wallets={wallets}
             onApprove={(approved: boolean, selectedAddress?: string) => {
               // Send response to background script
               chrome.runtime.sendMessage({

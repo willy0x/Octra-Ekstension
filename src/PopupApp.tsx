@@ -547,6 +547,12 @@ function PopupApp() {
   // Handle contract request - Show contract interaction interface
   if (contractRequest) {
     console.log('🔗 PopupApp: Showing contract request screen');
+    
+    // Find the wallet that is connected to this dApp
+    const connectedWallet = contractRequest.connectedAddress 
+      ? wallets.find(w => w.address === contractRequest.connectedAddress)
+      : null;
+    
     return (
       <ThemeProvider defaultTheme="dark" storageKey="octra-wallet-theme">
         <div className="w-[400px] h-[600px] bg-background popup-view">
@@ -554,7 +560,7 @@ function PopupApp() {
             <DAppRequestHandler 
               wallets={wallets}
               contractRequest={contractRequest}
-              selectedWallet={wallet}
+              selectedWallet={connectedWallet || wallet}
               onWalletSelect={setWallet}
               onApprove={handleContractApprove}
               onReject={handleContractReject}
