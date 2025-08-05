@@ -5,7 +5,6 @@
   "description": "Secure wallet for Octra blockchain network",
   "permissions": [
     "storage",
-    "tabs",
     "activeTab"
   ],
   "host_permissions": [
